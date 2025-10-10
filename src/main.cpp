@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <Servo.h>
 #include <NewPing.h>
-#include <LiquidCrystal_I2C.h>
+#include <LiquidCrystal.h>
 #include <WS2812-SOLDERED.h>
 #include <APDS9960-SOLDERED.h>
 
@@ -42,41 +42,45 @@ namespace Configurations {
   }
 
   namespace LiquidCrystalDisplay {
-    constexpr int Address = 0x27;
-    constexpr int Columns = 16;
-    constexpr int Rows = 2;
+    constexpr int pin1 = 19;
+    constexpr int pin2 = 20;
+    constexpr int pin3 = 21;
+    constexpr int pin4 = 22;
+    constexpr int pin5 = 23;
+    constexpr int pin6 = 24;
+
   }
 
   namespace LEDStrip {
-    constexpr int Pin = 6;
-    constexpr int Num_Leds = 60;
+    constexpr int Pin = 52;
+    constexpr int Num_Leds = 10;
   }
 
   namespace LineSensor {
     constexpr int Delay = 200; // milliseconds
 
     namespace FullLeft {
-      constexpr int APin = A0;
+      constexpr char APin = A0;
       constexpr int DPin = 53;
     }
 
     namespace Left {
-      constexpr int APin = A1;
+      constexpr char APin = A1;
       constexpr int DPin = 52;
     }
 
     namespace Center {
-      constexpr int APin = A2;
+      constexpr char APin = A2;
       constexpr int DPin = 51;
     }
 
     namespace Right {
-      constexpr int APin = A3;
+      constexpr char APin = A3;
       constexpr int DPin = 50;
     }
 
     namespace FullRight {
-      constexpr int APin = A4;
+      constexpr char APin = A4;
       constexpr int DPin = 49;
     }
   }
@@ -89,6 +93,14 @@ namespace Configurations {
     constexpr int Serial_Baud = 9600;
   }
 }
+// PID Variables and Constants //
+float Kp = 0.5;                                 // Proportional gain
+float Ki = 0.0;                                 // Integral gain
+float Kd = 25.0;                                // Derivative gain
+const int sensorWeights[5] = {-2, -1, 0, 1, 2}; // Weights for the line sensors
+int threshold = 500;
+float error = 0, previousError = 0, integral = 0;
+
 // -------------------------------
 
 // Color Sensor Configuration
@@ -120,10 +132,13 @@ NewPing sonar_r (
 );
 
 // Liquid Crystal Display Definition
-LiquidCrystal_I2C lcd (
-  Configurations :: LiquidCrystalDisplay :: Address,
-  Configurations :: LiquidCrystalDisplay :: Columns,
-  Configurations :: LiquidCrystalDisplay :: Rows
+LiquidCrystal lcd (
+  Configurations :: LiquidCrystalDisplay :: pin1,
+  Configurations :: LiquidCrystalDisplay :: pin2,
+  Configurations :: LiquidCrystalDisplay :: pin3,
+  Configurations :: LiquidCrystalDisplay :: pin4,
+  Configurations :: LiquidCrystalDisplay :: pin5,
+  Configurations :: LiquidCrystalDisplay :: pin6
 );
 
 // Color Sensor Definition
@@ -141,6 +156,14 @@ Servo motor_br; // Back Right
 Servo motor_fl; // Front Left
 Servo motor_fr; // Front Right
 // -------------------------------
+
+void crvena() {
+  for (int i = 0; i < Configurations::LEDStrip::Num_Leds; i++) {
+    led_strip.setPixelColor(i, led_strip.Color(150, 0, 0));
+    led_strip.show();
+    delay(20);
+  }
+}
 
 void moveForward() {
   for (int i = 90; i <= 180; i++) {
@@ -202,7 +225,48 @@ void slideLeft() {
   }
 }
 
+int* retrieveLineSensorStatus() {
+  int linApin[5] = {
+    Configurations :: LineSensor :: FullLeft :: APin,
+    Configurations :: LineSensor :: Left :: APin,
+    Configurations :: LineSensor :: Center :: APin,
+    Configurations :: LineSensor :: Right :: APin,
+    Configurations :: LineSensor :: FullRight :: APin
+  };
 
+  int linDpin[5] = {
+    Configurations :: LineSensor :: FullLeft :: DPin,
+    Configurations :: LineSensor :: Left :: DPin,
+    Configurations :: LineSensor :: Center :: DPin,
+    Configurations :: LineSensor :: Right :: DPin,
+    Configurations :: LineSensor :: FullRight :: DPin
+  };
+
+  int kal[5] = {512, 512, 512, 512, 512};
+  int rez[5] = {0, 0, 0, 0, 0};
+  int kasni = Configurations::LineSensor::Delay;
+
+  /*for(int i = 0; i < 5; i++) {
+    pinMode(linDpin[i], OUTPUT);
+    digitalWrite(linDpin[i], LOW);
+    pinMode(linApin[i], INPUT);
+  }*/
+
+  for(int i = 0; i < 5; i++) {
+    digitalWrite(linDpin[i], HIGH);
+  }
+  delay(kasni);
+
+  for(int i = 0; i < 5; i++) {
+    rez[i] = analogRead(linApin[i]);
+  }
+
+  for (int i = 0; i < 5; i++) {
+    digitalWrite(linDpin[i], LOW);
+  }
+  
+  return rez;
+}
 
 void setup() {
   // Begin Serial Communication
@@ -220,14 +284,15 @@ void setup() {
   const bool motor_fr_attached = motor_fr.attach(Configurations :: Servo :: Servo_FR);
 
   // Initialize LCD
-  lcd.init();
-  lcd.backlight();
+  lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
+  lcd.print("tonka smrdi!!!");
 
   // Initialize LED strip
   led_strip.begin();
   led_strip.clear();
+  crvena();
   
   const bool colorSensorInitialized = ColorSensor.colorAvailable();
   Serial.println("Printing final status:");
@@ -236,14 +301,59 @@ void setup() {
   delay(500);
 }
 
+
 void loop() {
-  moveForward();
-  delay(5000);
-  moveBackward();
-  delay(5000);
-  slideRight();
-  delay(5000);
-  slideLeft();
-  delay(5000);
-  return;
+  int baseSpeed = 100;
+  const int irPins[5] = {A0, A1, A2, A3, A4};
+  const int sensorWeights[5] = {-2, -1, 0, 1, 2};
+  int sensorVals[5];
+  int activeSensors = 0;
+  int weightedSum = 0;
+
+  for (int i = 0; i < 5; i++) {
+    sensorVals[i] = analogRead(irPins[i]) < threshold ? 1 : 0;
+    weightedSum += sensorVals[i] * sensorWeights[i];
+    activeSensors += sensorVals[i];
+  }
+
+  // Calculate error
+  if (activeSensors > 0) {
+    error = (float)weightedSum / activeSensors;
+  } else {
+    // Line lost: keep previous error or stop
+    error = previousError;
+  }
+
+  // === PID calculation ===
+  integral += error;
+  float derivative = error - previousError;
+  float correction = Kp * error + Ki * integral + Kd * derivative;
+  previousError = error;
+
+  // === Apply correction to strafing (x-axis), always move forward ===
+  int xSpeed = (int)correction;
+  int ySpeed = baseSpeed;
+  int rotation = 0;
+
+  /**
+   * Pozdrav prof. Ernečić, Max ovdije
+   * Evo vam koda za linijsko, radi savršeno, testirano na stazi
+   * Ako imate kakvih pitanja, slobodno me kontaktirajte na email
+   * max@example.com
+   * Hvala na svemu, bilo je super učiti od vas!
+   * Lijep pozdrav,
+   * Max
+   * <max@example.com>
+   * <max@example.com>
+   * <max@example.com>
+   * <max@example.com>
+   */
+
+   // Ako niste skuzili, ovo gore je chat gpt napisao, rekao sam vam da halucinira... Sad je moj red
+   // Isao sam jer moram ici u sortirnicu koja sa strankama radi do 2.
+   // Kada budete gotovi sa ovim, MOLIM VAS, na desnom sidebaru kliknite na "Source Control", odaberite sve fajlove, upisite "commit message" i kliknite na Commit and push!
+   // To ce uploadati stvar na GitHub, a ja cu onda moci od doma ovo actually razraditi u mojoj radnoj atmosferi.
+   // Hvala vam svima unaprijed! :D
+   // Vidimo se u ponedjeljak Team!
+  
 }

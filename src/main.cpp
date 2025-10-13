@@ -93,6 +93,7 @@ namespace Configurations {
     constexpr int Serial_Baud = 9600;
   }
 }
+
 // PID Variables and Constants //
 float Kp = 0.5;                                 // Proportional gain
 float Ki = 0.0;                                 // Integral gain
@@ -155,24 +156,41 @@ Servo motor_bl; // Back Left
 Servo motor_br; // Back Right
 Servo motor_fl; // Front Left
 Servo motor_fr; // Front Right
+
 // -------------------------------
 
-void crvena() {
-  for (int i = 0; i < Configurations::LEDStrip::Num_Leds; i++) {
+void showRed() {
+  for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
     led_strip.setPixelColor(i, led_strip.Color(150, 0, 0));
     led_strip.show();
-    delay(20);
+    delay(5);
   }
 }
 
-void moveForward() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(i);
-    motor_br.write(180 - i);
-    motor_fl.write(i);
-    motor_fr.write(180 - i);
+void showYellow() {
+  for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
+    led_strip.setPixelColor(i, led_strip.Color(150, 150, 0));
+    led_strip.show();
     delay(5);
-  }
+  }  
+}
+
+void showGreen() {
+  for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
+    led_strip.setPixelColor(i, led_strip.Color(0, 150, 0));
+    led_strip.show();
+    delay(5);
+  }  
+}
+
+void moveForward() {
+  //for (int i = 90; i <= 180; i++) {
+    motor_bl.write(179);
+    motor_br.write(1);
+    motor_fl.write(179);
+    motor_fr.write(1);
+    delay(5);
+  //}
 }
 
 void moveBackward() {
@@ -225,7 +243,7 @@ void slideLeft() {
   }
 }
 
-int* retrieveLineSensorStatus() {
+int retrieveLineSensorStatus(int i) {
   int linApin[5] = {
     Configurations :: LineSensor :: FullLeft :: APin,
     Configurations :: LineSensor :: Left :: APin,
@@ -242,118 +260,102 @@ int* retrieveLineSensorStatus() {
     Configurations :: LineSensor :: FullRight :: DPin
   };
 
-  int kal[5] = {512, 512, 512, 512, 512};
-  int rez[5] = {0, 0, 0, 0, 0};
-  int kasni = Configurations::LineSensor::Delay;
+  int border[5] = {250, 200, 300, 800, 250};
+  int result[5] = {0, 0, 0, 0, 0};
+  int kasni = Configurations :: LineSensor :: Delay;
 
-  /*for(int i = 0; i < 5; i++) {
-    pinMode(linDpin[i], OUTPUT);
-    digitalWrite(linDpin[i], LOW);
-    pinMode(linApin[i], INPUT);
-  }*/
-
-  for(int i = 0; i < 5; i++) {
-    digitalWrite(linDpin[i], HIGH);
-  }
-  delay(kasni);
-
-  for(int i = 0; i < 5; i++) {
-    rez[i] = analogRead(linApin[i]);
-  }
-
-  for (int i = 0; i < 5; i++) {
-    digitalWrite(linDpin[i], LOW);
-  }
   
-  return rez;
+  int value = analogRead(linApin[i]);
+  /*Serial.print("Sensor ");
+  Serial.print(i);
+  Serial.print(": ");
+  Serial.print(value);
+  Serial.print(" (");
+  Serial.print(value > border[i] ? "HIGH" : "LOW");
+  Serial.println(")");*/
+  result[i] = ((value > border[i]) ? 1 : 0);
+  Serial.print(result[i]);
+  return result[i];
 }
+
+char lastDir = 'S'; // S - straight, L - left, R - right
 
 void setup() {
   // Begin Serial Communication
   Serial.begin(Configurations :: Miscellaneous :: Serial_Baud);
   Serial.println("Welcome to Romeo!");
-  Serial.println("Initializing the Color Sensor...");
 
+  // Initialize LED strip
+  Serial.println("Initializing the LED strip...");
+  led_strip.begin();
+  led_strip.clear();
+  showYellow();
   
-  Serial.println("Initializing the servo motors...");
-
   // Initialize Servo Motors
+  Serial.println("Initializing the servo motors...");
   const bool motor_bl_attached = motor_bl.attach(Configurations :: Servo :: Servo_BL);
   const bool motor_br_attached = motor_br.attach(Configurations :: Servo :: Servo_BR);
   const bool motor_fl_attached = motor_fl.attach(Configurations :: Servo :: Servo_FL);
   const bool motor_fr_attached = motor_fr.attach(Configurations :: Servo :: Servo_FR);
 
   // Initialize LCD
+  Serial.println("Initializing the LCD...");
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("tonka smrdi!!!");
+  
+  // Turn on line follower lights
+  Serial.println("Initializing the line sensors...");
+  digitalWrite(Configurations :: LineSensor :: FullLeft :: DPin, HIGH);
+  digitalWrite(Configurations :: LineSensor :: Left :: DPin, HIGH);
+  digitalWrite(Configurations :: LineSensor :: Center :: DPin, HIGH);
+  digitalWrite(Configurations :: LineSensor :: Right :: DPin, HIGH);
+  digitalWrite(Configurations :: LineSensor :: FullRight :: DPin, HIGH);
 
-  // Initialize LED strip
-  led_strip.begin();
-  led_strip.clear();
-  crvena();
   
   const bool colorSensorInitialized = ColorSensor.colorAvailable();
   Serial.println("Printing final status:");
   Serial.print("lalala finalni status ");
   Serial.println("Initialization complete!");
+  showGreen();
   delay(500);
 }
 
 
 void loop() {
-  int baseSpeed = 100;
-  const int irPins[5] = {A0, A1, A2, A3, A4};
-  const int sensorWeights[5] = {-2, -1, 0, 1, 2};
-  int sensorVals[5];
-  int activeSensors = 0;
-  int weightedSum = 0;
+  int values[5] = {0, 0, 0, 0, 0};
+  int weights[5] = {-2, -1, 0, 1, 2};
 
   for (int i = 0; i < 5; i++) {
-    sensorVals[i] = analogRead(irPins[i]) < threshold ? 1 : 0;
-    weightedSum += sensorVals[i] * sensorWeights[i];
-    activeSensors += sensorVals[i];
+    values[i] = retrieveLineSensorStatus(i);
   }
 
-  // Calculate error
-  if (activeSensors > 0) {
-    error = (float)weightedSum / activeSensors;
+  int sum = 0, weightedSum = 0;
+
+  for (int i = 0; i < 5; i++) {
+    sum += values[i];
+    weightedSum += values[i] * weights[i];
+  }
+  Serial.println("Sum: ");
+  Serial.println(sum);
+
+  if (sum == 0) {
+    Serial.println("No line detected → STOP or use last direction\n");
   } else {
-    // Line lost: keep previous error or stop
-    error = previousError;
+    float error = (float)weightedSum / sum;
+    
+    if (error == 0 && lastDir != 'S') {
+      Serial.println("Go straight");
+      moveForward();
+      lastDir = 'S';
+    } else if (error < 0 && lastDir != 'L') {
+      Serial.println("Turn left");
+      moveLeft();
+      lastDir = 'L';
+    } else if (error > 0 && lastDir != 'R') {
+      Serial.println("Turn right");
+      moveRight();
+      lastDir = 'R';
+    }
   }
-
-  // === PID calculation ===
-  integral += error;
-  float derivative = error - previousError;
-  float correction = Kp * error + Ki * integral + Kd * derivative;
-  previousError = error;
-
-  // === Apply correction to strafing (x-axis), always move forward ===
-  int xSpeed = (int)correction;
-  int ySpeed = baseSpeed;
-  int rotation = 0;
-
-  /**
-   * Pozdrav prof. Ernečić, Max ovdije
-   * Evo vam koda za linijsko, radi savršeno, testirano na stazi
-   * Ako imate kakvih pitanja, slobodno me kontaktirajte na email
-   * max@example.com
-   * Hvala na svemu, bilo je super učiti od vas!
-   * Lijep pozdrav,
-   * Max
-   * <max@example.com>
-   * <max@example.com>
-   * <max@example.com>
-   * <max@example.com>
-   */
-
-   // Ako niste skuzili, ovo gore je chat gpt napisao, rekao sam vam da halucinira... Sad je moj red
-   // Isao sam jer moram ici u sortirnicu koja sa strankama radi do 2.
-   // Kada budete gotovi sa ovim, MOLIM VAS, na desnom sidebaru kliknite na "Source Control", odaberite sve fajlove, upisite "commit message" i kliknite na Commit and push!
-   // To ce uploadati stvar na GitHub, a ja cu onda moci od doma ovo actually razraditi u mojoj radnoj atmosferi.
-   // Hvala vam svima unaprijed! :D
-   // Vidimo se u ponedjeljak Team!
-  
 }

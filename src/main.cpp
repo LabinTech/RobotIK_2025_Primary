@@ -42,12 +42,12 @@ namespace Configurations {
   }
 
   namespace LiquidCrystalDisplay {
-    constexpr int pin1 = 19;
-    constexpr int pin2 = 20;
-    constexpr int pin3 = 21;
-    constexpr int pin4 = 22;
-    constexpr int pin5 = 23;
-    constexpr int pin6 = 24;
+    constexpr int pin1 = 40;
+    constexpr int pin2 = 41;
+    constexpr int pin3 = 42;
+    constexpr int pin4 = 43;
+    constexpr int pin5 = 44;
+    constexpr int pin6 = 45;
 
   }
 
@@ -59,29 +59,36 @@ namespace Configurations {
   namespace LineSensor {
     constexpr int Delay = 200; // milliseconds
 
-    namespace FullLeft {
+    namespace L1 {
       constexpr char APin = A0;
-      constexpr int DPin = 53;
     }
 
-    namespace Left {
+    namespace L2 {
       constexpr char APin = A1;
-      constexpr int DPin = 52;
     }
 
-    namespace Center {
+    namespace L3 {
       constexpr char APin = A2;
-      constexpr int DPin = 51;
     }
 
-    namespace Right {
+    namespace L4 {
       constexpr char APin = A3;
-      constexpr int DPin = 50;
     }
 
-    namespace FullRight {
+    namespace L5 {
       constexpr char APin = A4;
-      constexpr int DPin = 49;
+    }
+
+    namespace L6 {
+      constexpr char APin = A5;
+    }
+
+    namespace L7 {
+      constexpr char APin = A6;
+    }
+
+    namespace L8 {
+      constexpr char APin = A7;
     }
   }
 
@@ -94,13 +101,8 @@ namespace Configurations {
   }
 }
 
-// PID Variables and Constants //
-float Kp = 0.5;                                 // Proportional gain
-float Ki = 0.0;                                 // Integral gain
-float Kd = 25.0;                                // Derivative gain
-const int sensorWeights[5] = {-2, -1, 0, 1, 2}; // Weights for the line sensors
-int threshold = 500;
-float error = 0, previousError = 0, integral = 0;
+char lastDir = 'B'; // S - straight, L - left, R - right
+const int maxSpeed = 150;
 
 // -------------------------------
 
@@ -142,9 +144,6 @@ LiquidCrystal lcd (
   Configurations :: LiquidCrystalDisplay :: pin6
 );
 
-// Color Sensor Definition
-APDS_9960 color_sensor;
-
 // LED Strip Definition
 WS2812 led_strip (
   Configurations :: LEDStrip :: Num_Leds,
@@ -158,127 +157,122 @@ Servo motor_fl; // Front Left
 Servo motor_fr; // Front Right
 
 // -------------------------------
-
+/**
+ * @brief Displays a red color on the LED strip.
+ */
 void showRed() {
   for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
     led_strip.setPixelColor(i, led_strip.Color(150, 0, 0));
-    led_strip.show();
     delay(5);
   }
+  led_strip.show();
 }
 
+/**
+ * @brief Displays a yellow color on the LED strip.
+ */
 void showYellow() {
   for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
     led_strip.setPixelColor(i, led_strip.Color(150, 150, 0));
-    led_strip.show();
     delay(5);
-  }  
+  }
+  led_strip.show();
 }
-
+/**
+ * @brief Sets the LED strip to green color.
+ */
 void showGreen() {
   for (int i = 0; i < Configurations :: LEDStrip :: Num_Leds; i++) {
     led_strip.setPixelColor(i, led_strip.Color(0, 150, 0));
-    led_strip.show();
     delay(5);
-  }  
+  }
+  led_strip.show();
 }
 
+// Movement functions
+void stopMoving() {
+  motor_bl.write(90);
+  motor_br.write(90);
+  motor_fl.write(90);
+  motor_fr.write(90);
+  delay(5);
+}
 void moveForward() {
-  //for (int i = 90; i <= 180; i++) {
-    motor_bl.write(179);
-    motor_br.write(1);
-    motor_fl.write(179);
-    motor_fr.write(1);
-    delay(5);
-  //}
+  motor_bl.write(maxSpeed);
+  motor_br.write(180 - maxSpeed);
+  motor_fl.write(maxSpeed);
+  motor_fr.write(180 - maxSpeed);
+  delay(5);
 }
 
 void moveBackward() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(180 - i);
-    motor_br.write(i);
-    motor_fl.write(180 - i);
-    motor_fr.write(i);
-    delay(5);
-  }
+  motor_bl.write(180 - maxSpeed);
+  motor_br.write(maxSpeed);
+  motor_fl.write(180 - maxSpeed);
+  motor_fr.write(maxSpeed);
+  delay(5);
 }
 
 void moveRight() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(180 - i);
-    motor_br.write(180 - i);
-    motor_fl.write(i);
-    motor_fr.write(i);
-    delay(5);
-  }
+  motor_bl.write(180 - maxSpeed);
+  motor_br.write(180 - maxSpeed);
+  motor_fl.write(maxSpeed);
+  motor_fr.write(maxSpeed);
+  delay(5);
 }
 
 void moveLeft() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(i);
-    motor_br.write(i);
-    motor_fl.write(180 - i);
-    motor_fr.write(180 - i);
-    delay(5);
-  }
+  motor_bl.write(maxSpeed);
+  motor_br.write(maxSpeed);
+  motor_fl.write(180 - maxSpeed);
+  motor_fr.write(180 - maxSpeed);
+  delay(5);
 }
 
 void slideRight() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(90);
-    motor_br.write(180 - i);
-    motor_fl.write(90);
-    motor_fr.write(180 - i);
-    delay(5);
-  }
+  motor_bl.write(90);
+  motor_br.write(180 - maxSpeed);
+  motor_fl.write(90);
+  motor_fr.write(180 - maxSpeed);
+  delay(5);
 }
 
 void slideLeft() {
-  for (int i = 90; i <= 180; i++) {
-    motor_bl.write(180 - i);
-    motor_br.write(90);
-    motor_fl.write(180 - i);
-    motor_fr.write(90);
-    delay(5);
-  }
+  motor_bl.write(180 - maxSpeed);
+  motor_br.write(90);
+  motor_fl.write(180 - maxSpeed);
+  motor_fr.write(90);
+  delay(5);
 }
 
-int retrieveLineSensorStatus(int i) {
-  int linApin[5] = {
-    Configurations :: LineSensor :: FullLeft :: APin,
-    Configurations :: LineSensor :: Left :: APin,
-    Configurations :: LineSensor :: Center :: APin,
-    Configurations :: LineSensor :: Right :: APin,
-    Configurations :: LineSensor :: FullRight :: APin
+/**
+ * @brief Retrieves the status of a given line sensor.
+ */
+char retrieveLineSensorStatus(int sensorNum) {
+  int linApin[8] = {
+    Configurations :: LineSensor :: L1 :: APin,
+    Configurations :: LineSensor :: L2 :: APin,
+    Configurations :: LineSensor :: L3 :: APin,
+    Configurations :: LineSensor :: L4 :: APin,
+    Configurations :: LineSensor :: L5 :: APin,
+    Configurations :: LineSensor :: L6 :: APin,
+    Configurations :: LineSensor :: L7 :: APin,
+    Configurations :: LineSensor :: L8 :: APin
   };
 
-  int linDpin[5] = {
-    Configurations :: LineSensor :: FullLeft :: DPin,
-    Configurations :: LineSensor :: Left :: DPin,
-    Configurations :: LineSensor :: Center :: DPin,
-    Configurations :: LineSensor :: Right :: DPin,
-    Configurations :: LineSensor :: FullRight :: DPin
-  };
+  int border = 100;
+  char result = '67';
 
-  int border[5] = {250, 200, 300, 800, 250};
-  int result[5] = {0, 0, 0, 0, 0};
-  int kasni = Configurations :: LineSensor :: Delay;
+  int value = analogRead(linApin[sensorNum]);
 
-  
-  int value = analogRead(linApin[i]);
-  /*Serial.print("Sensor ");
-  Serial.print(i);
-  Serial.print(": ");
-  Serial.print(value);
-  Serial.print(" (");
-  Serial.print(value > border[i] ? "HIGH" : "LOW");
-  Serial.println(")");*/
-  result[i] = ((value > border[i]) ? 1 : 0);
-  Serial.print(result[i]);
-  return result[i];
+  /*if (value > border[sensorNum]) {
+    result = '1';
+  } else {
+    result = '0';
+  }*/
+  result = value;
+  return result;
 }
-
-char lastDir = 'S'; // S - straight, L - left, R - right
 
 void setup() {
   // Begin Serial Communication
@@ -293,25 +287,16 @@ void setup() {
   
   // Initialize Servo Motors
   Serial.println("Initializing the servo motors...");
-  const bool motor_bl_attached = motor_bl.attach(Configurations :: Servo :: Servo_BL);
-  const bool motor_br_attached = motor_br.attach(Configurations :: Servo :: Servo_BR);
-  const bool motor_fl_attached = motor_fl.attach(Configurations :: Servo :: Servo_FL);
-  const bool motor_fr_attached = motor_fr.attach(Configurations :: Servo :: Servo_FR);
+  const int motor_bl_attached = motor_bl.attach(Configurations :: Servo :: Servo_BL);
+  const int motor_br_attached = motor_br.attach(Configurations :: Servo :: Servo_BR);
+  const int motor_fl_attached = motor_fl.attach(Configurations :: Servo :: Servo_FL);
+  const int motor_fr_attached = motor_fr.attach(Configurations :: Servo :: Servo_FR);
 
   // Initialize LCD
   Serial.println("Initializing the LCD...");
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
-  
-  // Turn on line follower lights
-  Serial.println("Initializing the line sensors...");
-  digitalWrite(Configurations :: LineSensor :: FullLeft :: DPin, HIGH);
-  digitalWrite(Configurations :: LineSensor :: Left :: DPin, HIGH);
-  digitalWrite(Configurations :: LineSensor :: Center :: DPin, HIGH);
-  digitalWrite(Configurations :: LineSensor :: Right :: DPin, HIGH);
-  digitalWrite(Configurations :: LineSensor :: FullRight :: DPin, HIGH);
-
   
   const bool colorSensorInitialized = ColorSensor.colorAvailable();
   Serial.println("Printing final status:");
@@ -323,6 +308,50 @@ void setup() {
 
 
 void loop() {
+  String lineValue = "";
+  for (int i = 0; i < 8; i++) {
+    lineValue += String(retrieveLineSensorStatus(i));
+  }
+  if (lineValue == "00011000" || lineValue == "00110000" || lineValue == "00001100") {
+    Serial.println("On track");
+    moveForward();
+    lastDir = 'S';
+  } else if (lineValue == "00100000" || lineValue == "00110000") {
+    Serial.println("Turn left");
+    slideLeft();
+    lastDir = 'L';
+  } else if (lineValue == "00000100" || lineValue == "00001100") {
+    Serial.println("Turn right");
+    slideRight();
+    lastDir = 'R';
+  } else if (lineValue == "11111111") {
+    Serial.println("No line detected => STOP");
+    lcd.print("No line");
+    stopMoving();
+  } else {
+    Serial.println("Unknown pattern => STOP");
+    lcd.print("Unknown pattern");
+    stopMoving();
+  }
+}
+
+/*void loop() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("L:");
+  lcd.print(retrieveLineSensorStatus(0));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(1));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(2));
+
+  lcd.setCursor(0, 1);
+  lcd.print(retrieveLineSensorStatus(3));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(4));
+  delay(250);
+  lcd.clear();
+  return;
   int values[5] = {0, 0, 0, 0, 0};
   int weights[5] = {-2, -1, 0, 1, 2};
 
@@ -340,22 +369,27 @@ void loop() {
   Serial.println(sum);
 
   if (sum == 0) {
-    Serial.println("No line detected → STOP or use last direction\n");
+    Serial.println("No line detected => STOP");
+    lcd.print("No line");
+    stopMoving();
   } else {
     float error = (float)weightedSum / sum;
     
     if (error == 0 && lastDir != 'S') {
-      Serial.println("Go straight");
+      lcd.print("On track");
       moveForward();
       lastDir = 'S';
     } else if (error < 0 && lastDir != 'L') {
-      Serial.println("Turn left");
-      moveLeft();
+      lcd.print("Turn left");
+      slideLeft();
       lastDir = 'L';
     } else if (error > 0 && lastDir != 'R') {
-      Serial.println("Turn right");
-      moveRight();
+      lcd.print("Turn right");
+      slideRight();
       lastDir = 'R';
     }
   }
+  delay(250);
+  lcd.clear();
 }
+*/

@@ -58,8 +58,9 @@ namespace Configurations {
 
   namespace LineSensor {
     constexpr int Delay = 200; // milliseconds
-    // Threshold for converting raw analog values to binary ('0'/'1') when needed
-    constexpr int Threshold = 500; // tune per hardware
+    // Per-sensor thresholds for converting raw analog values to binary ('0'/'1')
+    // L1..L8 correspond to indices 0..7
+    constexpr int Thresholds[8] = {850, 700, 650, 750, 850, 850, 850, 850};
 
     namespace L1 {
       constexpr int APin = A0;
@@ -232,18 +233,18 @@ void moveLeft() {
 }
 
 void slideRight() {
-  motor_bl.write(90);
+  motor_bl.write(motor_bl.read() - 30);
   motor_br.write(180 - maxSpeed);
-  motor_fl.write(90);
+  motor_fl.write(motor_fl.read() - 30);
   motor_fr.write(180 - maxSpeed);
   delay(5);
 }
 
 void slideLeft() {
-  motor_bl.write(180 - maxSpeed);
-  motor_br.write(90);
-  motor_fl.write(180 - maxSpeed);
-  motor_fr.write(90);
+  motor_bl.write(180);
+  motor_br.write(motor_br.read() - 30);
+  motor_fl.write(180);
+  motor_fr.write(motor_fr.read() - 30);
   delay(5);
 }
 
@@ -251,25 +252,40 @@ void slideLeft() {
  * @brief Reads raw analog value of a given line sensor (0..1023)
  */
 int readLineSensorRaw(int sensorNum) {
-  const int linApin[8] = {
-    Configurations :: LineSensor :: L1 :: APin,
-    Configurations :: LineSensor :: L2 :: APin,
-    Configurations :: LineSensor :: L3 :: APin,
-    Configurations :: LineSensor :: L4 :: APin,
-    Configurations :: LineSensor :: L5 :: APin,
-    Configurations :: LineSensor :: L6 :: APin,
-    Configurations :: LineSensor :: L7 :: APin,
-    Configurations :: LineSensor :: L8 :: APin
-  };
-  if (sensorNum < 0 || sensorNum >= 8) return 0;
-  return analogRead(linApin[sensorNum]);
+  switch (sensorNum) {
+    case 0:
+      return analogRead(Configurations :: LineSensor :: L1 :: APin);
+    case 1:
+      return analogRead(Configurations :: LineSensor :: L2 :: APin);
+    case 2:
+      return analogRead(Configurations :: LineSensor :: L3 :: APin);
+    case 3:
+      return analogRead(Configurations :: LineSensor :: L4 :: APin);
+    case 4:
+      return analogRead(Configurations :: LineSensor :: L5 :: APin);
+    case 5:
+      return analogRead(Configurations :: LineSensor :: L6 :: APin);
+    case 6:
+      return analogRead(Configurations :: LineSensor :: L7 :: APin);
+    case 7:
+      return analogRead(Configurations :: LineSensor :: L8 :: APin);
+    default:
+      return -1; // Invalid sensor number
+  }
 }
 
 /**
- * @brief Convert raw reading to binary '0'/'1' using configured threshold.
+ * @brief Convert raw reading to binary '0'/'1' using configured per-sensor threshold.
+ * @param sensorNum Index 0..7 for sensors L1..L8
+ * @param raw The raw analog value (0..1023)
  */
-char toBitFromRaw(int raw) {
-  return (raw > Configurations :: LineSensor :: Threshold) ? '1' : '0';
+char toBitFromRaw(int sensorNum, int raw) {
+  // Bounds check: if out of range, default to mid threshold 512
+  if (sensorNum < 0 || sensorNum > 7) {
+    return (raw > 512) ? '1' : '0';
+  }
+  const int threshold = Configurations :: LineSensor :: Thresholds[sensorNum];
+  return (raw > threshold) ? '1' : '0';
 }
 
 void setup() {
@@ -304,42 +320,39 @@ void setup() {
   delay(500);
 }
 
-
 void loop() {
   String lineValue = "";
   for (int i = 0; i < 8; i++) {
     int raw = readLineSensorRaw(i);
-    char bit = toBitFromRaw(raw);
+    char bit = toBitFromRaw(i, raw);
     // Print raw value for visibility
-    Serial.print("Line sensor ");
+    /*Serial.print("Line sensor ");
     Serial.print(i);
     Serial.print(": ");
-    Serial.println(raw);
+    Serial.println(raw);*/
     // Build binary pattern string
     lineValue += bit;
   }
-  if (lineValue == "00011000" || lineValue == "00110000" || lineValue == "00001100") {
-    //Serial.println("On track");
+  if ((lineValue == "00011000" || lineValue == "00111000" || lineValue == "00011100") && lastDir != 'S') {
+    Serial.println("On track");
     moveForward();
     lastDir = 'S';
-  } else if (lineValue == "00100000" || lineValue == "00110000") {
-    //Serial.println("Turn left");
+  } else if ((lineValue == "01110000" || lineValue == "11100000" || lineValue == "11000000") && lastDir != 'L') {
+    Serial.println("Turn left");
     slideLeft();
     lastDir = 'L';
-  } else if (lineValue == "00000100" || lineValue == "00001100") {
-    //Serial.println("Turn right");
+  } else if ((lineValue == "00001110" || lineValue == "00000111" || lineValue == "000000011") && lastDir != 'R') {
+    Serial.println("Turn right");
     slideRight();
     lastDir = 'R';
   } else if (lineValue == "11111111") {
-    //Serial.println("No line detected => STOP");
-    lcd.print("No line");
+    Serial.println("No line detected => STOP");
     stopMoving();
   } else {
+    //Serial.println("Continuing like before yayayaya");
     //Serial.println(lineValue);
-    lcd.print("Unknown pattern");
-    stopMoving();
   }
-  delay(1000);
+  delay(50);
 }
 
 /*void loop() {

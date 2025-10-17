@@ -14,30 +14,30 @@ namespace Configurations {
     constexpr int Servo_BL = 4;
     constexpr int Servo_BR = 5;
     constexpr int Servo_FL = 2;
-    constexpr int Servo_FR = 7;
+    constexpr int Servo_FR = 3;
   }
 
   namespace Ultrasonic {
     constexpr int Max_distance = 400;
 
     namespace Front {
-      constexpr int Trigger = 31;
-      constexpr int Echo = 30;
+      constexpr int Trigger = 22;
+      constexpr int Echo = 23;
     }
 
     namespace Back {
-      constexpr int Trigger = 37;
-      constexpr int Echo = 36;
+      constexpr int Trigger = 26;
+      constexpr int Echo = 27;
     }
 
     namespace Left {
-      constexpr int Trigger = 33;
-      constexpr int Echo = 32;
+      constexpr int Trigger = 24;
+      constexpr int Echo = 25;
     }
 
     namespace Right {
-      constexpr int Trigger = 35;
-      constexpr int Echo = 34;
+      constexpr int Trigger = 28;
+      constexpr int Echo = 29;
     }
   }
 
@@ -321,10 +321,96 @@ void setup() {
 }
 
 void loop() {
-  Serial.println(sonar_f.ping());
-  Serial.println(sonar_r.ping());
-  Serial.println(sonar_b.ping());
-  Serial.println(sonar_l.ping());
-  Serial.println("-----");
+  moveForward();
+  String lineValue = "";
+  for (int i = 0; i < 8; i++) {
+    int raw = readLineSensorRaw(i);
+    char bit = toBitFromRaw(i, raw);
+    // Print raw value for visibility
+    Serial.print("Line sensor ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.println(raw);
+    // Build binary pattern string
+    lineValue += bit;
+  }
+  if ((lineValue == "00011000" || lineValue == "00111000" || lineValue == "00011100") && lastDir != 'S') {
+    Serial.println("On track");
+    //moveForward();
+    lastDir = 'S';
+  } else if ((lineValue == "01110000" || lineValue == "11100000" || lineValue == "11000000") && lastDir != 'L') {
+    Serial.println("Turn left");
+    //slideLeft();
+    lastDir = 'L';
+  } else if ((lineValue == "00001110" || lineValue == "00000111" || lineValue == "000000011") && lastDir != 'R') {
+    Serial.println("Turn right");
+    //slideRight();
+    lastDir = 'R';
+  } else if (lineValue == "11111111") {
+    Serial.println("No line detected => STOP");
+    //stopMoving();
+  } else {
+    //Serial.println("Continuing like before yayayaya");
+    //Serial.println(lineValue);
+  }
   delay(1000);
 }
+
+/*void loop() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("L:");
+  lcd.print(retrieveLineSensorStatus(0));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(1));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(2));
+
+  lcd.setCursor(0, 1);
+  lcd.print(retrieveLineSensorStatus(3));
+  lcd.print(" ");
+  lcd.print(retrieveLineSensorStatus(4));
+  delay(250);
+  lcd.clear();
+  return;
+  int values[5] = {0, 0, 0, 0, 0};
+  int weights[5] = {-2, -1, 0, 1, 2};
+
+  for (int i = 0; i < 5; i++) {
+    values[i] = retrieveLineSensorStatus(i);
+  }
+
+  int sum = 0, weightedSum = 0;
+
+  for (int i = 0; i < 5; i++) {
+    sum += values[i];
+    weightedSum += values[i] * weights[i];
+  }
+  Serial.println("Sum: ");
+  Serial.println(sum);
+
+  if (sum == 0) {
+    Serial.println("No line detected => STOP");
+    lcd.print("No line");
+    stopMoving();
+  } else {
+    float error = (float)weightedSum / sum;
+    
+    if (error == 0 && lastDir != 'S') {
+      lcd.print("On track");
+      moveForward();
+      lastDir = 'S';
+    } else if (error < 0 && lastDir != 'L') {
+      lcd.print("Turn left");
+      slideLeft();
+      lastDir = 'L';
+    } else if (error > 0 && lastDir != 'R') {
+      lcd.print("Turn right");
+      slideRight();
+      lastDir = 'R';
+    }
+  }
+  delay(250);
+  lcd.clear();
+}
+*/
